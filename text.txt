@@ -1,0 +1,153 @@
+fsq3CvwCBTHrGvOqsl0aLh7Vgbg24lwVOVDshl2m1SYNrbg=
+
+fsq34UN8HdkZzupPGNJZQxl09B+1HTRlzpf4N445vPSoBKw=
+
+const options = {
+  method: 'GET',
+  headers: {
+    Accept: 'application/json',
+    Authorization: 'fsq34UN8HdkZzupPGNJZQxl09B+1HTRlzpf4N445vPSoBKw='
+  }
+};
+
+fetch('https://api.foursquare.com/v3/places/search', options)
+  .then(response => response.json())
+  .then(response => console.log(response))
+  .catch(err => console.error(err));
+
+
+
+
+
+
+
+
+
+
+import Link from "next/link";
+import { useRouter } from "next/router";
+import Head from "next/head";
+import classes from "../../styles/coffee-store.module.css";
+import Image from "next/image";
+import { fetchCoffeeStores } from "../../lib/coffee-stores";
+import { StoreContext } from "../../context/store.context";
+import { isEmpty } from "../../utils";
+import { useContext, useState, useEffect } from "react";
+import useSWR from "swr";
+
+export async function getStaticProps({ params }) {
+  const coffeeStore = await fetchCoffeeStores();
+  const findCoffeeStoreById = coffeeStore.find((e) => e.id === params.id);
+
+  return {
+    props: {
+      coffeeStore: findCoffeeStoreById ? findCoffeeStoreById : {},
+    },
+  };
+}
+
+export async function getStaticPaths() {
+  const coffeeStore = await fetchCoffeeStores();
+  const paths = coffeeStore.map((e) => {
+    return {
+      params: { id: `${e.id}` },
+    };
+  });
+  return {
+    paths,
+    fallback: true,
+  };
+}
+
+const fetcher = (url) => fetch(url).then((res) => res.json());
+
+const CoffeeStore = ({ coffeeStore }) => {
+  const router = useRouter();
+  const { id } = router.query;
+
+  const [coffeeStoresData, setCoffeeStoresData] = useState(coffeeStore);
+  const [votingCount, setVotingCount] = useState(0);
+
+  const {
+    state: { coffeeStores },
+  } = useContext(StoreContext);
+
+  const handleCreateCoffeeStore = async (coffeeStore) => {
+    try {
+      const { id, name, address, address2, street, street2, voting, imgUrl } = coffeeStore;
+
+      const response = await fetch(`/api/createCoffeeStore`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id,
+          name,
+          address: address || "",
+          address2: address2 || "",
+          street: street || "",
+          street2: street2 || "",
+          voting,
+          imgUrl,
+        }),
+      });
+
+      const dbCoffeeStore = await response.json();
+    } catch (err) {
+      console.log(err);
+    }
+  };
+
+  useEffect(() => {
+    if (coffeeStore && isEmpty(coffeeStore)) {
+      if (coffeeStores.length > 0) {
+        const coffeeStoreFromContext = coffeeStores.find((e) => e.id === id);
+        if (coffeeStoreFromContext) {
+          setCoffeeStoresData(coffeeStoreFromContext);
+          handleCreateCoffeeStore(coffeeStoreFromContext);
+        }
+      }
+    } else {
+      // SSG
+      handleCreateCoffeeStore(coffeeStore);
+    }
+  }, [id, coffeeStore, coffeeStores]);
+
+  const { data, error } = useSWR(`/api/getCoffeeStoreById?id=${id}`, fetcher);
+
+  useEffect(() => {
+    if (data && data.length > 0) {
+      setCoffeeStoresData(data[0]);
+
+      setVotingCount(data[0].voting);
+    }
+  }, [data]);
+
+  const handleUpvoteButton = async () => {
+    try {
+      const response = await fetch(`/api/favouriteCoffeeStoreById`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id }),
+      });
+
+      const dbCoffeeStore = await response.json();
+
+      if (dbCoffeeStore && dbCoffeeStore.length > 0) {
+        setVotingCount(votingCount + 1);
+      }
+    } catch (err) {
+      console.log("Error upvoting the coffee store", err);
+    }
+  };
+
+  if (error) {
+    return <div>Something went wrong retriving coffee store</div>;
+  }
+
+  if (router.isFallback) {
+    return <div>Loading...</div>;
+  }
